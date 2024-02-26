@@ -85,7 +85,7 @@ func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli in
 	cfg.op()
 	if log != nil {
 		log.Append(porcupine.Operation{
-			Input:    models.KvInput{Op: 3, Key: key, Value: value},
+			Input:    models.KvInput{Op: 2, Key: key, Value: value},
 			Output:   models.KvOutput{Value: last},
 			Call:     start,
 			Return:   end,
