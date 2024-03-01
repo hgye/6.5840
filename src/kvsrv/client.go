@@ -12,7 +12,7 @@ import (
 type Clerk struct {
 	server *labrpc.ClientEnd
 	// You will have to modify this struct.
-	// writeChan chan string
+	ID int64
 }
 
 func nrand() int64 {
@@ -28,6 +28,7 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	// You'll have to add code here.
 	// ch := make(chan string)
 	// ck.writeChan = ch
+	ck.ID = nrand()
 	return ck
 }
 
@@ -47,8 +48,8 @@ func (ck *Clerk) Get(key string) string {
 
 	args := GetArgs{
 		Key: key,
-		ID: nrand(),
-		// ch: ck.writeChan,
+		RPCID: nrand(),
+		ClientID: ck.ID,
 	}
 
 	reply := GetReply{}
@@ -78,8 +79,8 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args := PutAppendArgs{
 		Key: key,
 		Value: value,
-		ID: nrand(),
-		// ch: ck.writeChan,
+		RPCID: nrand(),
+		ClientID: ck.ID,
 	}
 	reply := PutAppendReply{}
 

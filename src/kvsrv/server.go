@@ -1,6 +1,7 @@
 package kvsrv
 
 import (
+	"fmt"
 	"log"
 	"sync"
 )
@@ -22,6 +23,7 @@ type KVServer struct {
 	db map[string]string
 	dbchan chan clientOper
 	cache map[int64]string
+	clientReq map[int64]int64
 }
 
 const (
@@ -44,8 +46,20 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	DPrintf("+++, whatever")
 	kv.mu.Lock()
-	v, ok := kv.cache[args.ID]
+	// delete in cache according to clientid
+	rpcId, ok := kv.clientReq[args.ClientID]
+	if ok {
+		if rpcId != args.RPCID {
+			fmt.Printf("delete kv.cache\n")
+			delete(kv.cache, rpcId)
+		}
+	} else {
+		kv.clientReq[args.ClientID] = args.RPCID
+	}
+
+	v, ok := kv.cache[args.RPCID]
 	kv.mu.Unlock()
+
 	if !ok {
 		DPrintf("before  kv.dbchan")
 		ch := make(chan string)
@@ -65,7 +79,18 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
-	v, ok := kv.cache[args.ID]
+	// delete in cache according to clientid
+	rpcId, ok := kv.clientReq[args.ClientID]
+	if ok {
+		if rpcId != args.RPCID {
+			fmt.Printf("put delete cache\n")
+			delete(kv.cache, rpcId)
+		}
+	} else {
+		kv.clientReq[args.ClientID] = args.RPCID
+	}
+
+	v, ok := kv.cache[args.RPCID]
 	kv.mu.Unlock()
 	if !ok {
 		ch := make(chan string)
@@ -86,7 +111,18 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
-	v, ok := kv.cache[args.ID]
+	// delete in cache according to clientid
+	rpcId, ok := kv.clientReq[args.ClientID]
+	if ok {
+		if rpcId != args.RPCID {
+			delete(kv.cache, rpcId)
+			fmt.Printf("append delete cache\n")
+		}
+	} else {
+		kv.clientReq[args.ClientID] = args.RPCID
+	}
+
+	v, ok := kv.cache[args.RPCID]
 	kv.mu.Unlock()
 	if !ok {
 		ch := make(chan string)
@@ -100,14 +136,6 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	reply.Value = v
 	// fmt.Printf("reply.value is %s\n", reply.Value)
 
-	// v, ok := kv.db[args.Key]
-	// if !ok {
-	// 	v = ""
-	// }
-	// kv.db[args.Key] = v+args.Value
-	// kv.mu.Unlock()
-
-	// reply.Value = v
 }
 
 func StartKVServer() *KVServer {
@@ -119,6 +147,8 @@ func StartKVServer() *KVServer {
 
 	cache := make(map[int64]string, 10)
 	kv.cache = cache
+
+	kv.clientReq = make(map[int64]int64, 10)
 
 	dbchan := make(chan clientOper)
 	kv.dbchan = dbchan
@@ -136,13 +166,13 @@ func StartKVServer() *KVServer {
 				v, ok := kv.db[clientoper.getargs.Key]
 				if !ok {v=""}
 				kv.mu.Lock()
-				kv.cache[clientoper.getargs.ID] = v
+				kv.cache[clientoper.getargs.RPCID] = v
 				kv.mu.Unlock()
 				clientoper.ch <- v
 			case PUT:
 				kv.db[clientoper.putappendargs.Key] = clientoper.putappendargs.Value
 				kv.mu.Lock()
-				kv.cache[clientoper.putappendargs.ID] = clientoper.putappendargs.Value
+				kv.cache[clientoper.putappendargs.RPCID] = clientoper.putappendargs.Value
 				kv.mu.Unlock()
 				clientoper.ch <- clientoper.putappendargs.Value
 			case APPEND:
@@ -150,7 +180,7 @@ func StartKVServer() *KVServer {
 				if !ok {v=""}
 				kv.db[clientoper.putappendargs.Key] = v+clientoper.putappendargs.Value
 				kv.mu.Lock()
-				kv.cache[clientoper.putappendargs.ID] = v
+				kv.cache[clientoper.putappendargs.RPCID] = v
 				kv.mu.Unlock()
 				clientoper.ch <- v
 

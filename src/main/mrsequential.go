@@ -10,8 +10,9 @@ import "fmt"
 import "6.5840/mr"
 import "plugin"
 import "os"
-import "io"
 import "log"
+// import "io/ioutil"
+import "io"
 import "sort"
 
 // for sorting by key.
