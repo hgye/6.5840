@@ -20,8 +20,8 @@ type KVServer struct {
 
 	// Your definitions here.
 	db       map[string]string
-	dbch     chan DBOper
-	clientch chan ClientReq
+	dbch     chan *DBOper
+	clientch chan *ClientReq
 	clients  map[int64]Client
 }
 
@@ -36,10 +36,8 @@ const (
 type DBOper struct {
 	op    int
 	key   string
-	value string
-	// getargs *GetArgs
-	// putappendargs *PutAppendArgs
-	ch chan string
+	value *string
+	ch    chan *string
 }
 
 type ClientReq struct {
@@ -47,109 +45,71 @@ type ClientReq struct {
 	rpcid int64
 	op    int
 	key   string
-	value string
-	ch chan struct{}
+	value *string
+	ch    chan struct{}
 }
 
 type Client struct {
 	cache    string
-	resultch chan string
+	resultch chan *string
 	rpcid    int64
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
-	DPrintf("+++, whatever")
-	kv.mu.Lock()
-	_, ok := kv.clients[args.ClientID]
-	kv.mu.Unlock()
-	if !ok {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op:    GET,
-			key:   args.Key,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
-		<- req.ch
-	} else {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op:    GET,
-			key:   args.Key,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
+	req := ClientReq{
+		id:    args.ClientID,
+		rpcid: args.RPCID,
+		op:    GET,
+		key:   args.Key,
+		ch:    make(chan struct{}),
 	}
+	kv.mu.Lock()
+	kv.clientch <- &req
+	kv.mu.Unlock()
+	<-req.ch
 
-	result := <- kv.clients[args.ClientID].resultch
-	reply.Value = result
-	// fmt.Println("reply.Value is", result)
+	result := <-kv.clients[args.ClientID].resultch
+	reply.Value = *result
+	// Your code here.
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	kv.mu.Lock()
-	_, ok := kv.clients[args.ClientID]
-	kv.mu.Unlock()
-	if !ok {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op:    PUT,
-			key:   args.Key,
-			value: args.Value,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
-		<- req.ch
-	} else {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op:    PUT,
-			key:   args.Key,
-			value: args.Value,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
+	req := ClientReq{
+		id:    args.ClientID,
+		rpcid: args.RPCID,
+		op:    PUT,
+		key:   args.Key,
+		value: &args.Value,
+		ch:    make(chan struct{}),
 	}
-	result := <- kv.clients[args.ClientID].resultch
-	reply.Value = result
+	kv.mu.Lock()
+	kv.clientch <- &req
+	kv.mu.Unlock()
+	<-req.ch
+
+	result := <-kv.clients[args.ClientID].resultch
+	reply.Value = *result
 
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	kv.mu.Lock()
-	_, ok := kv.clients[args.ClientID]
-	kv.mu.Unlock()
-	if !ok {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op: APPEND,
-			key:   args.Key,
-			value: args.Value,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
-		<- req.ch
-	} else {
-		req := ClientReq{
-			id:    args.ClientID,
-			rpcid: args.RPCID,
-			op: APPEND,
-			key:   args.Key,
-			value: args.Value,
-			ch: make(chan struct{}),
-		}
-		kv.clientch <- req
+	req := ClientReq{
+		id:    args.ClientID,
+		rpcid: args.RPCID,
+		op:    APPEND,
+		key:   args.Key,
+		value: &args.Value,
+		ch:    make(chan struct{}),
 	}
-	result := <- kv.clients[args.ClientID].resultch
-	reply.Value = result
+	kv.mu.Lock()
+	kv.clientch <- &req
+	kv.mu.Unlock()
+	<-req.ch
+
+	result := <-kv.clients[args.ClientID].resultch
+	reply.Value = *result
 	DPrintf("reply.value is %s\n", reply.Value)
 
 }
@@ -160,13 +120,14 @@ func StartKVServer() *KVServer {
 	// You may need initialization code here.
 	db := make(map[string]string, 10)
 	kv.db = db
-	dbchan := make(chan DBOper)
+	dbchan := make(chan *DBOper)
 	kv.dbch = dbchan
 
-	kv.clientch = make(chan ClientReq)
+	kv.clientch = make(chan *ClientReq, 10)
 	kv.clients = make(map[int64]Client, 10)
 
 	go func() {
+		// this routine handle db operation
 		for {
 			dbop := <-kv.dbch
 			DPrintf("after dbch, %v", dbop)
@@ -177,9 +138,9 @@ func StartKVServer() *KVServer {
 				if !ok {
 					v = ""
 				}
-				dbop.ch <- v
+				dbop.ch <- &v
 			case PUT:
-				kv.db[dbop.key] = dbop.value
+				kv.db[dbop.key] = *dbop.value
 				DPrintf("put dbop.ch is %v\n", dbop.ch)
 				dbop.ch <- dbop.value
 			case APPEND:
@@ -187,9 +148,8 @@ func StartKVServer() *KVServer {
 				if !ok {
 					v = ""
 				}
-				kv.db[dbop.key] = v + dbop.value
-				// fmt.Printf("old value is %v", v)
-				dbop.ch <- v
+				kv.db[dbop.key] = v + *dbop.value
+				dbop.ch <- &v
 			}
 		}
 	}()
@@ -202,37 +162,24 @@ func StartKVServer() *KVServer {
 			if !ok {
 				c = Client{
 					rpcid:    client.rpcid,
-					resultch: make(chan string),
+					resultch: make(chan *string),
 				}
 				kv.clients[client.id] = c
-				client.ch <- struct{}{}
+			}
+			if client.rpcid != kv.clients[client.id].rpcid || !ok {
 				d := DBOper{
 					op:    client.op,
 					key:   client.key,
 					value: client.value,
-					ch:    make(chan string),
+					ch:    make(chan *string),
 				}
-				kv.dbch <- d
-				DPrintf("dbop.ch is %v\n", d.ch)
-				c.cache = <-d.ch
-			} else {
-				if client.rpcid == kv.clients[client.id].rpcid {
-					// rpc same just send cache result
-					c.resultch <- c.cache
-				} else {
-					d := DBOper{
-						op:    client.op,
-						key:   client.key,
-						value: client.value,
-						ch:    make(chan string),
-					}
-
-					kv.dbch <- d
-					c.cache = <-d.ch
-				}
+				kv.dbch <- &d
+				c.cache = *<-d.ch
 			}
+
+			client.ch <- struct{}{}
 			// fmt.Println("c.cache is", c.cache, "c.resultch is ", c.resultch)
-			c.resultch <- c.cache
+			c.resultch <- &c.cache
 		}
 	}()
 

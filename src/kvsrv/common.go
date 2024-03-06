@@ -19,7 +19,7 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
-	RPCID  int64
+	RPCID    int64
 	ClientID int64
 	// ch  chan string
 }

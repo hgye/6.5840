@@ -8,7 +8,6 @@ import (
 	"6.5840/labrpc"
 )
 
-
 type Clerk struct {
 	server *labrpc.ClientEnd
 	// You will have to modify this struct.
@@ -45,8 +44,8 @@ func (ck *Clerk) Get(key string) string {
 	// You will have to modify this function.
 
 	args := GetArgs{
-		Key: key,
-		RPCID: nrand(),
+		Key:      key,
+		RPCID:    nrand(),
 		ClientID: ck.ID,
 	}
 
@@ -75,9 +74,9 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
 	args := PutAppendArgs{
-		Key: key,
-		Value: value,
-		RPCID: nrand(),
+		Key:      key,
+		Value:    value,
+		RPCID:    nrand(),
 		ClientID: ck.ID,
 	}
 	reply := PutAppendReply{}
