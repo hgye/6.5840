@@ -1,7 +1,7 @@
 package kvsrv
 
 import (
-	"fmt"
+	// "fmt"
 	"log"
 	"sync"
 )
@@ -15,15 +15,14 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type KVServer struct {
 	mu sync.Mutex
 
 	// Your definitions here.
-	db map[string]string
-	dbchan chan clientOper
-	cache map[int64]string
-	clientReq map[int64]int64
+	db       map[string]string
+	dbch     chan DBOper
+	clientch chan ClientReq
+	clients  map[int64]Client
 }
 
 const (
@@ -32,109 +31,126 @@ const (
 	APPEND
 )
 
-type DBOper int
+// type DBOper int
 
-type clientOper struct {
-	dboper DBOper
-	getargs *GetArgs
-	putappendargs *PutAppendArgs
+type DBOper struct {
+	op    int
+	key   string
+	value string
+	// getargs *GetArgs
+	// putappendargs *PutAppendArgs
 	ch chan string
 }
 
+type ClientReq struct {
+	id    int64
+	rpcid int64
+	op    int
+	key   string
+	value string
+	ch chan struct{}
+}
+
+type Client struct {
+	cache    string
+	resultch chan string
+	rpcid    int64
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	DPrintf("+++, whatever")
 	kv.mu.Lock()
-	// delete in cache according to clientid
-	rpcId, ok := kv.clientReq[args.ClientID]
-	if ok {
-		if rpcId != args.RPCID {
-			fmt.Printf("delete kv.cache\n")
-			delete(kv.cache, rpcId)
-		}
-	} else {
-		kv.clientReq[args.ClientID] = args.RPCID
-	}
-
-	v, ok := kv.cache[args.RPCID]
+	_, ok := kv.clients[args.ClientID]
 	kv.mu.Unlock()
-
 	if !ok {
-		DPrintf("before  kv.dbchan")
-		ch := make(chan string)
-		kv.dbchan <- clientOper{
-			dboper: GET,
-			getargs: args,
-			ch: ch,
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op:    GET,
+			key:   args.Key,
+			ch: make(chan struct{}),
 		}
-		DPrintf("before get args.ch")
-		v = <- ch
-		DPrintf("after get args.ch")
+		kv.clientch <- req
+		<- req.ch
+	} else {
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op:    GET,
+			key:   args.Key,
+			ch: make(chan struct{}),
+		}
+		kv.clientch <- req
 	}
-	reply.Value = v
-	// fmt.Println("reply.Value is", v)
+
+	result := <- kv.clients[args.ClientID].resultch
+	reply.Value = result
+	// fmt.Println("reply.Value is", result)
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
-	// delete in cache according to clientid
-	rpcId, ok := kv.clientReq[args.ClientID]
-	if ok {
-		if rpcId != args.RPCID {
-			fmt.Printf("put delete cache\n")
-			delete(kv.cache, rpcId)
-		}
-	} else {
-		kv.clientReq[args.ClientID] = args.RPCID
-	}
-
-	v, ok := kv.cache[args.RPCID]
+	_, ok := kv.clients[args.ClientID]
 	kv.mu.Unlock()
 	if !ok {
-		ch := make(chan string)
-		kv.dbchan <- clientOper{
-			dboper: PUT,
-			putappendargs: args,
-			ch: ch,
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op:    PUT,
+			key:   args.Key,
+			value: args.Value,
+			ch: make(chan struct{}),
 		}
-
-		v = <- ch
+		kv.clientch <- req
+		<- req.ch
+	} else {
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op:    PUT,
+			key:   args.Key,
+			value: args.Value,
+			ch: make(chan struct{}),
+		}
+		kv.clientch <- req
 	}
-	reply.Value = v
-	// kv.db[args.Key] = args.Value
-	// kv.mu.Unlock()
-	// reply.Value = args.Value
+	result := <- kv.clients[args.ClientID].resultch
+	reply.Value = result
+
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
-	// delete in cache according to clientid
-	rpcId, ok := kv.clientReq[args.ClientID]
-	if ok {
-		if rpcId != args.RPCID {
-			delete(kv.cache, rpcId)
-			fmt.Printf("append delete cache\n")
-		}
-	} else {
-		kv.clientReq[args.ClientID] = args.RPCID
-	}
-
-	v, ok := kv.cache[args.RPCID]
+	_, ok := kv.clients[args.ClientID]
 	kv.mu.Unlock()
 	if !ok {
-		ch := make(chan string)
-		kv.dbchan <- clientOper{
-			dboper: APPEND,
-			putappendargs: args,
-			ch: ch,
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op: APPEND,
+			key:   args.Key,
+			value: args.Value,
+			ch: make(chan struct{}),
 		}
-		v = <- ch
+		kv.clientch <- req
+		<- req.ch
+	} else {
+		req := ClientReq{
+			id:    args.ClientID,
+			rpcid: args.RPCID,
+			op: APPEND,
+			key:   args.Key,
+			value: args.Value,
+			ch: make(chan struct{}),
+		}
+		kv.clientch <- req
 	}
-	reply.Value = v
-	// fmt.Printf("reply.value is %s\n", reply.Value)
+	result := <- kv.clients[args.ClientID].resultch
+	reply.Value = result
+	DPrintf("reply.value is %s\n", reply.Value)
 
 }
 
@@ -144,48 +160,79 @@ func StartKVServer() *KVServer {
 	// You may need initialization code here.
 	db := make(map[string]string, 10)
 	kv.db = db
+	dbchan := make(chan DBOper)
+	kv.dbch = dbchan
 
-	cache := make(map[int64]string, 10)
-	kv.cache = cache
-
-	kv.clientReq = make(map[int64]int64, 10)
-
-	dbchan := make(chan clientOper)
-	kv.dbchan = dbchan
-
-
+	kv.clientch = make(chan ClientReq)
+	kv.clients = make(map[int64]Client, 10)
 
 	go func() {
 		for {
-			DPrintf("before dbchan")
-			clientoper := <-kv.dbchan
-			DPrintf("after dbch, %v", clientoper)
-			DPrintf("dboper is %d\n", clientoper.dboper)
-			switch clientoper.dboper {
+			dbop := <-kv.dbch
+			DPrintf("after dbch, %v", dbop)
+			DPrintf("dboper is %d\n", dbop.op)
+			switch dbop.op {
 			case GET:
-				v, ok := kv.db[clientoper.getargs.Key]
-				if !ok {v=""}
-				kv.mu.Lock()
-				kv.cache[clientoper.getargs.RPCID] = v
-				kv.mu.Unlock()
-				clientoper.ch <- v
+				v, ok := kv.db[dbop.key]
+				if !ok {
+					v = ""
+				}
+				dbop.ch <- v
 			case PUT:
-				kv.db[clientoper.putappendargs.Key] = clientoper.putappendargs.Value
-				kv.mu.Lock()
-				kv.cache[clientoper.putappendargs.RPCID] = clientoper.putappendargs.Value
-				kv.mu.Unlock()
-				clientoper.ch <- clientoper.putappendargs.Value
+				kv.db[dbop.key] = dbop.value
+				DPrintf("put dbop.ch is %v\n", dbop.ch)
+				dbop.ch <- dbop.value
 			case APPEND:
-				v, ok := kv.db[clientoper.putappendargs.Key]
-				if !ok {v=""}
-				kv.db[clientoper.putappendargs.Key] = v+clientoper.putappendargs.Value
-				kv.mu.Lock()
-				kv.cache[clientoper.putappendargs.RPCID] = v
-				kv.mu.Unlock()
-				clientoper.ch <- v
-
+				v, ok := kv.db[dbop.key]
+				if !ok {
+					v = ""
+				}
+				kv.db[dbop.key] = v + dbop.value
+				// fmt.Printf("old value is %v", v)
+				dbop.ch <- v
 			}
+		}
+	}()
 
+	go func() {
+		for {
+			client := <-kv.clientch
+			DPrintf("after clientch received")
+			c, ok := kv.clients[client.id]
+			if !ok {
+				c = Client{
+					rpcid:    client.rpcid,
+					resultch: make(chan string),
+				}
+				kv.clients[client.id] = c
+				client.ch <- struct{}{}
+				d := DBOper{
+					op:    client.op,
+					key:   client.key,
+					value: client.value,
+					ch:    make(chan string),
+				}
+				kv.dbch <- d
+				DPrintf("dbop.ch is %v\n", d.ch)
+				c.cache = <-d.ch
+			} else {
+				if client.rpcid == kv.clients[client.id].rpcid {
+					// rpc same just send cache result
+					c.resultch <- c.cache
+				} else {
+					d := DBOper{
+						op:    client.op,
+						key:   client.key,
+						value: client.value,
+						ch:    make(chan string),
+					}
+
+					kv.dbch <- d
+					c.cache = <-d.ch
+				}
+			}
+			// fmt.Println("c.cache is", c.cache, "c.resultch is ", c.resultch)
+			c.resultch <- c.cache
 		}
 	}()
 

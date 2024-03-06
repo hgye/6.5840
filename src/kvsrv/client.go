@@ -26,8 +26,6 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
 	// You'll have to add code here.
-	// ch := make(chan string)
-	// ck.writeChan = ch
 	ck.ID = nrand()
 	return ck
 }
