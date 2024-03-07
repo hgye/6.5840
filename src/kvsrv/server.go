@@ -82,7 +82,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		}
 		kv.dbch <- d
 		result := <- d.ch
+		kv.mu.Lock()
 		kv.clients[args.ClientID].cache = result
+		kv.mu.Unlock()
 		reply.Value = result
 	} else {
 		reply.Value = kv.clients[args.ClientID].cache
@@ -111,7 +113,9 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 		kv.dbch <- d
 		result := <- d.ch
+		kv.mu.Lock()
 		kv.clients[args.ClientID].cache = result
+		kv.mu.Unlock()
 		reply.Value = result
 	} else {
 		reply.Value = kv.clients[args.ClientID].cache
@@ -144,7 +148,9 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 		kv.dbch <- d
 		result := <- d.ch
+		kv.mu.Lock()
 		kv.clients[args.ClientID].cache = result
+		kv.mu.Unlock()
 		reply.Value = result
 	} else {
 		reply.Value = kv.clients[args.ClientID].cache
@@ -209,7 +215,9 @@ func StartKVServer() *KVServer {
 					rpcid:    client.rpcid,
 					cachech: make(chan string),
 				}
+				kv.mu.Lock()
 				kv.clients[client.id] = c
+				kv.mu.Unlock()
 				client.ch <- true
 			} else if client.rpcid != c.rpcid {
 				kv.clients[client.id].rpcid = client.rpcid
