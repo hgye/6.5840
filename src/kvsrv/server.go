@@ -20,9 +20,9 @@ type KVServer struct {
 
 	// Your definitions here.
 	db       map[string]string
-	dbch     chan *DBOper
+	dbrdch     chan *DBOper
 	clientch chan *ClientReq
-	clients  map[int64]Client
+	clients  map[int64]*Client
 }
 
 const (
@@ -51,10 +51,19 @@ type ClientReq struct {
 
 type Client struct {
 	cache    string
-	resultch chan *string
+	cachech  chan *string
+	// dbwtch   chan *string
 	rpcid    int64
 }
 
+// func createClient(args ) chan struct{} {
+// 	ch := make(chan struct{})
+
+// 	c := CLient {
+// 		rpcid: args.rpcid,
+// 	}
+
+// }
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	req := ClientReq{
 		id:    args.ClientID,
@@ -63,12 +72,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		key:   args.Key,
 		ch:    make(chan struct{}),
 	}
-	kv.mu.Lock()
 	kv.clientch <- &req
-	kv.mu.Unlock()
 	<-req.ch
-
-	result := <-kv.clients[args.ClientID].resultch
+	result := <-kv.clients[args.ClientID].cachech
 	reply.Value = *result
 	// Your code here.
 }
@@ -83,12 +89,9 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		value: &args.Value,
 		ch:    make(chan struct{}),
 	}
-	kv.mu.Lock()
 	kv.clientch <- &req
-	kv.mu.Unlock()
 	<-req.ch
-
-	result := <-kv.clients[args.ClientID].resultch
+	result := <-kv.clients[args.ClientID].cachech
 	reply.Value = *result
 
 }
@@ -103,14 +106,11 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		value: &args.Value,
 		ch:    make(chan struct{}),
 	}
-	kv.mu.Lock()
 	kv.clientch <- &req
-	kv.mu.Unlock()
 	<-req.ch
-
-	result := <-kv.clients[args.ClientID].resultch
+	result := <-kv.clients[args.ClientID].cachech
 	reply.Value = *result
-	DPrintf("reply.value is %s\n", reply.Value)
+	// fmt.Printf("reply.value is %s\n", reply.Value)
 
 }
 
@@ -121,17 +121,17 @@ func StartKVServer() *KVServer {
 	db := make(map[string]string, 10)
 	kv.db = db
 	dbchan := make(chan *DBOper)
-	kv.dbch = dbchan
+	kv.dbrdch = dbchan
 
-	kv.clientch = make(chan *ClientReq, 10)
-	kv.clients = make(map[int64]Client, 10)
+	kv.clientch = make(chan *ClientReq)
+	kv.clients = make(map[int64]*Client, 10)
 
 	go func() {
 		// this routine handle db operation
 		for {
-			dbop := <-kv.dbch
-			DPrintf("after dbch, %v", dbop)
-			DPrintf("dboper is %d\n", dbop.op)
+			dbop := <-kv.dbrdch
+			// DPrintf("after dbch, %v", dbop)
+			// DPrintf("dboper is %d\n", dbop.op)
 			switch dbop.op {
 			case GET:
 				v, ok := kv.db[dbop.key]
@@ -141,7 +141,7 @@ func StartKVServer() *KVServer {
 				dbop.ch <- &v
 			case PUT:
 				kv.db[dbop.key] = *dbop.value
-				DPrintf("put dbop.ch is %v\n", dbop.ch)
+				// DPrintf("put dbop.ch is %v\n", dbop.ch)
 				dbop.ch <- dbop.value
 			case APPEND:
 				v, ok := kv.db[dbop.key]
@@ -150,6 +150,7 @@ func StartKVServer() *KVServer {
 				}
 				kv.db[dbop.key] = v + *dbop.value
 				dbop.ch <- &v
+				DPrintf("====db append, old value is %v, new value is %v\n", v, *dbop.value)
 			}
 		}
 	}()
@@ -160,26 +161,33 @@ func StartKVServer() *KVServer {
 			DPrintf("after clientch received")
 			c, ok := kv.clients[client.id]
 			if !ok {
-				c = Client{
+				c = &Client{
 					rpcid:    client.rpcid,
-					resultch: make(chan *string),
+					cachech: make(chan *string),
 				}
 				kv.clients[client.id] = c
 			}
-			if client.rpcid != kv.clients[client.id].rpcid || !ok {
+			// fmt.Println("client.rpcid is ", client.rpcid, "old rpcid is ", c.rpcid,
+			// "ok is ", ok, "c.cache is ", c.cache)
+			// fmt.Println("+++cond is ", client.rpcid != c.rpcid || !ok, "c.cache is ", c.cache )
+			if client.rpcid == c.rpcid {
+				DPrintf("!!!! here we go")
+			}
+			if client.rpcid != c.rpcid || !ok {
+				c.rpcid = client.rpcid
 				d := DBOper{
 					op:    client.op,
 					key:   client.key,
 					value: client.value,
 					ch:    make(chan *string),
 				}
-				kv.dbch <- &d
+				kv.dbrdch <- &d
 				c.cache = *<-d.ch
 			}
 
 			client.ch <- struct{}{}
-			// fmt.Println("c.cache is", c.cache, "c.resultch is ", c.resultch)
-			c.resultch <- &c.cache
+			c.cachech <- &c.cache
+			// fmt.Println("---c.cache is", c.cache)
 		}
 	}()
 
