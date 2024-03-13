@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-
 	"6.5840/labrpc"
 )
 
@@ -53,7 +52,7 @@ func (ck *Clerk) Get(key string) string {
 
 	for {
 		ok := ck.server.Call("KVServer.Get", &args, &reply)
-		// fmt.Printf("--- args.ID is %d, key is %s\n", args.ID , args.Key)
+		fmt.Printf("--- args.ID is %d, key is %s\n", args.ClientID , args.Key)
 		if !ok {
 			fmt.Errorf("rpc call KVServer.Get failed")
 		} else {
@@ -83,7 +82,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 
 	for {
 		ok := ck.server.Call("KVServer."+op, &args, &reply)
-		// fmt.Printf("++++ op is %s, args.ID is %d, key is %s, value is %s\n", op, args.ID, args.Key, args.Value, )
+		fmt.Printf("++++ op is %s, args.ID is %d, key is %s, value is %d\n", op, args.ClientID, args.Key, len(args.Value))
 		if !ok {
 			fmt.Errorf("rpc call KVServer.%s failed", op)
 		} else {
